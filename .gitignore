@@ -1,0 +1,51 @@
+# Ignore Terraform state files and backups
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/.terraform.lock.hcl
+# Ignore Terraform cache directories
+terraform/.terraform/*
+
+# Ignore zip files (potentially large binaries)
+*.zip
+
+# Ignore compiled binaries in cmd directories
+cmd/**/main
+
+# Ignore Go build files
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+
+# Ignore IDE/editor-specific files and settings
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Ignore log files
+*.log
+
+# Ignore dependency directories
+vendor/
+
+# Ignore binary artifacts
+bin/
+build/
+
+# Ignore coverage and test result files
+*.out
+*.coverage
+*.cov
+
+# Ignore system-specific files
+.DS_Store
+Thumbs.db
+
+# Ignore GolangCI-Lint cache
+.golangci-cache/
+
+# Ignore unnecessary system files
+._*
