@@ -1,81 +1,76 @@
+// main.go
 package main
 
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/salawhaaat/parentheses-lambda/pkg/parentheses"
 )
 
-// API endpoint URL
-const apiURL = "https://y3op6n0u1i.execute-api.eu-north-1.amazonaws.com/parentheses-byhand"
-
-type Response struct {
-	Sequence string `json:"sequence"`
-}
+// Base URL for the API
+const baseURL = "https://y3op6n0u1i.execute-api.eu-north-1.amazonaws.com/parentheses-byhand"
 
 func main() {
 	numberOfRequests := 1000
 	lengths := []int{2, 4, 8}
-	concurrency := 7 // Number of concurrent workers
+	numWorkers := 10
 
 	for _, length := range lengths {
-		startTime := time.Now()
-		success := evaluateParenthesesWithWorkerPool(length, numberOfRequests, concurrency)
-		duration := time.Since(startTime)
+		result := make(chan int, numberOfRequests) // Make result channel with buffer size
+		jobs := make(chan string, numberOfRequests)
 
-		successRate := float64(success) / float64(numberOfRequests) * 100
-		fmt.Printf("Result for %d requests with length %d is %.2f%% (Time taken: %s)\n", numberOfRequests, length, successRate, duration)
-	}
-}
+		// Create the workers
+		var wg sync.WaitGroup
+		for i := 0; i < numWorkers; i++ {
+			wg.Add(1)
+			go work(jobs, result, &wg)
+		}
 
-func evaluateParenthesesWithWorkerPool(length, numberOfRequests, concurrency int) int {
-	var successCount int
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	url := fmt.Sprintf("%s?n=%d", apiURL, length)
+		url := fmt.Sprintf("%s?n=%d", baseURL, length)
 
-	// Channel to limit concurrency
-	requests := make(chan struct{}, concurrency)
-
-	for i := 0; i < numberOfRequests; i++ {
-		requests <- struct{}{}
-		wg.Add(1)
+		for i := 0; i < numberOfRequests; i++ {
+			jobs <- url // Send the jobs
+		}
+		close(jobs)
 
 		go func() {
-			defer wg.Done()
-
-			sequence, err := sendRequest(url)
-			if err != nil {
-				fmt.Println("Request error:", err)
-				<-requests
-
-				return
-			}
-
-			if parentheses.IsBalanced(sequence) {
-				mu.Lock()
-				successCount++
-				mu.Unlock()
-			}
-
-			<-requests
+			wg.Wait()
+			close(result)
 		}()
+
+		successCount := 0
+
+		for success := range result {
+			successCount += success // Gather the results
+		}
+
+		successRate := float64(successCount) / float64(numberOfRequests) * 100
+		fmt.Printf("Result for %d requests with length %d is %.2f%% \n", numberOfRequests, length, successRate)
 	}
-
-	wg.Wait()
-
-	return successCount
 }
+
+func work(jobs <-chan string, results chan<- int, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for job := range jobs {
+		sequence, err := sendRequest(job)
+		if err != nil {
+			fmt.Println("Request error:", err)
+			continue
+		}
+		if parentheses.IsBalanced(sequence) {
+			results <- 1
+		}
+	}
+}
+
 
 func sendRequest(url string) (string, error) {
 	resp, err := http.Get(url)
 	if err != nil {
-		return "", fmt.Errorf("Error making request: %w", err)
+		return "", fmt.Errorf("error making request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -83,14 +78,11 @@ func sendRequest(url string) (string, error) {
 		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("error reading response body: %w", err)
+	var response struct {
+		Sequence string `json:"sequence"`
 	}
 
-	var response Response
-	err = json.Unmarshal(body, &response)
-	if err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return "", fmt.Errorf("error parsing JSON response: %w", err)
 	}
 
